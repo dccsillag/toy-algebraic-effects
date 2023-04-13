@@ -4,19 +4,19 @@ use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
 struct Variable(usize);
 
 #[derive(Clone)]
-enum AST {
-    Lambda(Variable, Box<AST>),
-    Application(Box<AST>, Box<AST>),
+enum Ast {
+    Lambda(Variable, Box<Ast>),
+    Application(Box<Ast>, Box<Ast>),
     Variable(Variable),
     Const(Value),
-    Cond(Box<AST>, Box<AST>, Box<AST>),
+    Cond(Box<Ast>, Box<Ast>, Box<Ast>),
 }
 
 #[derive(Clone)]
 enum Value {
     BuiltinFunction(Rc<dyn Fn(Value, &mut State) -> Result<Value, Error>>),
     BuiltinValue(Rc<dyn Any>),
-    Function(Rc<RefCell<Context>>, Variable, Box<AST>),
+    Function(Rc<RefCell<Context>>, Variable, Box<Ast>),
     Bool(bool),
     Int(i64),
     String(String),
@@ -55,14 +55,14 @@ impl Context {
     }
 }
 
-fn interpret(ast: &AST, context: &mut Context, state: &mut State) -> Result<Value, Error> {
+fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Value, Error> {
     match ast {
-        AST::Lambda(bound_var, body) => Ok(Value::Function(
+        Ast::Lambda(bound_var, body) => Ok(Value::Function(
             Rc::new(RefCell::new(context.clone())),
             *bound_var,
             body.clone(),
         )),
-        AST::Application(f, x) => {
+        Ast::Application(f, x) => {
             let arg = interpret(x, context, state)?;
             match interpret(f, context, state)? {
                 Value::BuiltinFunction(func) => func(arg, state),
@@ -75,12 +75,12 @@ fn interpret(ast: &AST, context: &mut Context, state: &mut State) -> Result<Valu
                 | Value::String(_)) => Err(Error::NotACallableValue(val)),
             }
         }
-        AST::Variable(var) => match context.lookup(var) {
+        Ast::Variable(var) => match context.lookup(var) {
             Some(out) => Ok(out.clone()),
             None => Err(Error::NotInScope(*var)),
         },
-        AST::Const(val) => Ok(val.clone()),
-        AST::Cond(cond, then, r#else) => match interpret(cond, context, state)? {
+        Ast::Const(val) => Ok(val.clone()),
+        Ast::Cond(cond, then, r#else) => match interpret(cond, context, state)? {
             Value::Bool(b) => interpret(if b { then } else { r#else }, context, state),
             val @ (Value::BuiltinFunction(_)
             | Value::BuiltinValue(_)
