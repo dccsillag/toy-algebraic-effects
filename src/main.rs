@@ -1,7 +1,13 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-struct Variable(usize);
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Variable(String);
+
+macro_rules! var {
+    ($name:literal) => {
+        Variable(stringify!($name).to_string())
+    };
+}
 
 #[derive(Clone)]
 enum Ast {
@@ -35,17 +41,26 @@ struct State {}
 struct Context(HashMap<Variable, Value>);
 
 impl Context {
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn insert(&mut self, var: Variable, value: Value) {
+        let ret = self.0.insert(var, value);
+        assert!(ret.is_none());
+    }
+
     pub fn with_var<T>(
         &mut self,
-        var: Variable,
+        var: &Variable,
         value: Value,
         func: impl FnOnce(&mut Context) -> T,
     ) -> T {
-        let maybe_save = self.0.insert(var, value);
+        let maybe_save = self.0.insert(var.clone(), value);
         let out = func(self);
         match maybe_save {
-            Some(save) => self.0.insert(var, save),
-            None => self.0.remove(&var),
+            Some(save) => self.0.insert(var.clone(), save),
+            None => self.0.remove(var),
         };
         out
     }
@@ -59,7 +74,7 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
     match ast {
         Ast::Lambda(bound_var, body) => Ok(Value::Function(
             Rc::new(RefCell::new(context.clone())),
-            *bound_var,
+            bound_var.clone(),
             body.clone(),
         )),
         Ast::Application(f, x) => {
@@ -68,7 +83,7 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
                 Value::BuiltinFunction(func) => func(arg, state),
                 Value::Function(closure_context, bound_var, body) => closure_context
                     .borrow_mut()
-                    .with_var(bound_var, arg, |context| interpret(&body, context, state)),
+                    .with_var(&bound_var, arg, |context| interpret(&body, context, state)),
                 val @ (Value::BuiltinValue(_)
                 | Value::Bool(_)
                 | Value::Int(_)
@@ -77,7 +92,7 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
         }
         Ast::Variable(var) => match context.lookup(var) {
             Some(out) => Ok(out.clone()),
-            None => Err(Error::NotInScope(*var)),
+            None => Err(Error::NotInScope(var.clone())),
         },
         Ast::Const(val) => Ok(val.clone()),
         Ast::Cond(cond, then, r#else) => match interpret(cond, context, state)? {
@@ -89,6 +104,16 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
             | Value::String(_)) => Err(Error::NotABoolValue(val)),
         },
     }
+}
+
+fn initialize() -> (Context, State) {
+    let mut context = Context::new();
+    let state = State {};
+
+    context.insert(var!("true"), Value::Bool(true));
+    context.insert(var!("false"), Value::Bool(false));
+
+    (context, state)
 }
 
 fn main() {
