@@ -37,6 +37,7 @@ enum Error {
 
 struct State {
     content: Vec<String>,
+    document_size: usize,
 }
 
 #[derive(Clone)]
@@ -108,10 +109,11 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
     }
 }
 
-fn initialize() -> (Context, State) {
+fn initialize(expected_document_size: usize) -> (Context, State) {
     let mut context = Context::new();
     let state = State {
         content: Vec::new(),
+        document_size: expected_document_size,
     };
 
     context.insert(var!("true"), Value::Bool(true));
@@ -136,8 +138,43 @@ fn initialize() -> (Context, State) {
             Ok(Value::Int(state.content.len().try_into().unwrap()))
         })),
     );
+    context.insert(
+        var!("size"),
+        Value::BuiltinFunction(Rc::new(|_input, state| {
+            Ok(Value::Int(state.document_size.try_into().unwrap()))
+        })),
+    );
+    context.insert(
+        var!("percent"),
+        Value::BuiltinFunction(Rc::new(|_input, state| {
+            let k: i64 = state.content.len().try_into().unwrap();
+            let n: i64 = state.document_size.try_into().unwrap();
+            Ok(Value::Int(k / n))
+        })),
+    );
 
     (context, state)
+}
+
+fn compile(ast: &Ast) -> Result<Vec<String>, Error> {
+    let mut document_size = 0;
+    let mut out = None;
+    for i in 0..5 {
+        println!("Iteration #{i}");
+
+        let (mut context, mut state) = initialize(document_size);
+
+        interpret(ast, &mut context, &mut state)?;
+
+        let new_out = Some(state.content);
+        if out == new_out {
+            println!("Converged!");
+            break;
+        }
+        out = new_out;
+        document_size = state.document_size;
+    }
+    Ok(out.unwrap())
 }
 
 fn main() {
