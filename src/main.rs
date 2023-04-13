@@ -35,7 +35,9 @@ enum Error {
     NotABoolValue(Value),
 }
 
-struct State {}
+struct State {
+    content: Vec<String>,
+}
 
 #[derive(Clone)]
 struct Context(HashMap<Variable, Value>);
@@ -108,10 +110,32 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
 
 fn initialize() -> (Context, State) {
     let mut context = Context::new();
-    let state = State {};
+    let state = State {
+        content: Vec::new(),
+    };
 
     context.insert(var!("true"), Value::Bool(true));
     context.insert(var!("false"), Value::Bool(false));
+    context.insert(
+        var!("content"),
+        Value::BuiltinFunction(Rc::new(|input, state| match input {
+            Value::String(str) => {
+                state.content.push(str.to_string());
+                Ok(Value::String(str))
+            }
+            Value::BuiltinFunction(_)
+            | Value::BuiltinValue(_)
+            | Value::Function(_, _, _)
+            | Value::Bool(_)
+            | Value::Int(_) => todo!(),
+        })),
+    );
+    context.insert(
+        var!("location"),
+        Value::BuiltinFunction(Rc::new(|_input, state| {
+            Ok(Value::Int(state.content.len().try_into().unwrap()))
+        })),
+    );
 
     (context, state)
 }
