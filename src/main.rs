@@ -1,8 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::{hash_map::Values, HashMap},
-    rc::Rc,
-};
+use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Variable(usize);
@@ -19,6 +15,7 @@ enum AST {
 #[derive(Clone)]
 enum Value {
     BuiltinFunction(Rc<dyn Fn(Value) -> Result<Value, Error>>),
+    BuiltinValue(Rc<dyn Any>),
     Function(Rc<RefCell<Context>>, Variable, Box<AST>),
     Bool(bool),
     Int(i64),
@@ -70,9 +67,10 @@ fn interpret(ast: &AST, context: &mut Context) -> Result<Value, Error> {
                 Value::Function(closure_context, bound_var, body) => closure_context
                     .borrow_mut()
                     .with_var(bound_var, arg, |context| interpret(&body, context)),
-                val @ (Value::Bool(_) | Value::Int(_) | Value::String(_)) => {
-                    Err(Error::NotACallableValue(val))
-                }
+                val @ (Value::BuiltinValue(_)
+                | Value::Bool(_)
+                | Value::Int(_)
+                | Value::String(_)) => Err(Error::NotACallableValue(val)),
             }
         }
         AST::Variable(var) => match context.lookup(var) {
@@ -83,6 +81,7 @@ fn interpret(ast: &AST, context: &mut Context) -> Result<Value, Error> {
         AST::Cond(cond, then, r#else) => match interpret(cond, context)? {
             Value::Bool(b) => interpret(if b { then } else { r#else }, context),
             val @ (Value::BuiltinFunction(_)
+            | Value::BuiltinValue(_)
             | Value::Function(_, _, _)
             | Value::Int(_)
             | Value::String(_)) => Err(Error::NotABoolValue(val)),
