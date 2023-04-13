@@ -14,7 +14,7 @@ enum AST {
 
 #[derive(Clone)]
 enum Value {
-    BuiltinFunction(Rc<dyn Fn(Value) -> Result<Value, Error>>),
+    BuiltinFunction(Rc<dyn Fn(Value, &mut State) -> Result<Value, Error>>),
     BuiltinValue(Rc<dyn Any>),
     Function(Rc<RefCell<Context>>, Variable, Box<AST>),
     Bool(bool),
@@ -28,6 +28,8 @@ enum Error {
     NotACallableValue(Value),
     NotABoolValue(Value),
 }
+
+struct State {}
 
 #[derive(Clone)]
 struct Context(HashMap<Variable, Value>);
@@ -53,7 +55,7 @@ impl Context {
     }
 }
 
-fn interpret(ast: &AST, context: &mut Context) -> Result<Value, Error> {
+fn interpret(ast: &AST, context: &mut Context, state: &mut State) -> Result<Value, Error> {
     match ast {
         AST::Lambda(bound_var, body) => Ok(Value::Function(
             Rc::new(RefCell::new(context.clone())),
@@ -61,12 +63,12 @@ fn interpret(ast: &AST, context: &mut Context) -> Result<Value, Error> {
             body.clone(),
         )),
         AST::Application(f, x) => {
-            let arg = interpret(x, context)?;
-            match interpret(f, context)? {
-                Value::BuiltinFunction(func) => func(arg),
+            let arg = interpret(x, context, state)?;
+            match interpret(f, context, state)? {
+                Value::BuiltinFunction(func) => func(arg, state),
                 Value::Function(closure_context, bound_var, body) => closure_context
                     .borrow_mut()
-                    .with_var(bound_var, arg, |context| interpret(&body, context)),
+                    .with_var(bound_var, arg, |context| interpret(&body, context, state)),
                 val @ (Value::BuiltinValue(_)
                 | Value::Bool(_)
                 | Value::Int(_)
@@ -78,8 +80,8 @@ fn interpret(ast: &AST, context: &mut Context) -> Result<Value, Error> {
             None => Err(Error::NotInScope(*var)),
         },
         AST::Const(val) => Ok(val.clone()),
-        AST::Cond(cond, then, r#else) => match interpret(cond, context)? {
-            Value::Bool(b) => interpret(if b { then } else { r#else }, context),
+        AST::Cond(cond, then, r#else) => match interpret(cond, context, state)? {
+            Value::Bool(b) => interpret(if b { then } else { r#else }, context, state),
             val @ (Value::BuiltinFunction(_)
             | Value::BuiltinValue(_)
             | Value::Function(_, _, _)
