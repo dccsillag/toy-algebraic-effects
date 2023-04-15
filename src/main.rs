@@ -12,6 +12,7 @@ macro_rules! var {
 #[derive(Clone)]
 enum Ast {
     Lambda(Variable, Box<Ast>),
+    Fix,
     Application(Box<Ast>, Box<Ast>),
     Variable(Variable),
     Const(Value),
@@ -20,6 +21,7 @@ enum Ast {
 
 #[derive(Clone)]
 enum Value {
+    Fix,
     BuiltinFunction(Rc<dyn Fn(Value, &mut State) -> Result<Value, Error>>),
     BuiltinValue(Rc<dyn Any>),
     Function(Rc<RefCell<Context>>, Variable, Box<Ast>),
@@ -80,6 +82,7 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
             bound_var.clone(),
             body.clone(),
         )),
+        Ast::Fix => Ok(Value::Fix),
         Ast::Application(f, x) => {
             let arg = interpret(x, context, state)?;
             match interpret(f, context, state)? {
@@ -87,6 +90,11 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
                 Value::Function(closure_context, bound_var, body) => closure_context
                     .borrow_mut()
                     .with_var(&bound_var, arg, |context| interpret(&body, context, state)),
+                Value::Fix => interpret(
+                    &Ast::Application(Box::new(Ast::Const(arg)), Box::new(ast.clone())),
+                    context,
+                    state,
+                ),
                 val @ (Value::BuiltinValue(_)
                 | Value::Bool(_)
                 | Value::Int(_)
@@ -101,6 +109,7 @@ fn interpret(ast: &Ast, context: &mut Context, state: &mut State) -> Result<Valu
         Ast::Cond(cond, then, r#else) => match interpret(cond, context, state)? {
             Value::Bool(b) => interpret(if b { then } else { r#else }, context, state),
             val @ (Value::BuiltinFunction(_)
+            | Value::Fix
             | Value::BuiltinValue(_)
             | Value::Function(_, _, _)
             | Value::Int(_)
@@ -126,6 +135,7 @@ fn initialize(expected_document_size: usize) -> (Context, State) {
                 Ok(Value::String(str))
             }
             Value::BuiltinFunction(_)
+            | Value::Fix
             | Value::BuiltinValue(_)
             | Value::Function(_, _, _)
             | Value::Bool(_)
